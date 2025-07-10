@@ -37,8 +37,32 @@ app.post('/webhook', async (req, res) => {
       const content = message.text?.body || "(message non texte)";
       console.log(`📨 Message reçu de ${from} : "${content}"`);
 
-      // 🔁 Envoi de réponse par défaut
-      await sendReply(from, "Bonjour mon ami");
+      try {
+        // Étape 1 : Vérifier si le compte WhatsApp existe
+        const compteRes = await axios.get(`https://lobiko.onrender.com/api/whatsapp-accounts/?whatsapp_id=${from}`);
+        const compteExiste = compteRes.data.length > 0;
+
+        if (!compteExiste) {
+            await sendReply(from, "Bienvenue ! Quel est votre nom complet ?");
+            // ici tu pourrais garder ce numéro dans un stockage temporaire pour attendre la réponse
+        } else {
+            const user = compteRes.data[0];
+            await sendReply(from, `Ravi de vous revoir, ${user.nom_utilisateur} !`);
+            // Poursuis avec la logique : créer patient, poser les questions, etc.
+        }
+
+        // (facultatif) Tu peux aussi ici créer un Message dans Django :
+        await axios.post("https://lobiko.onrender.com/api//messages/", {
+            session: 12, // (à récupérer dynamiquement selon la logique de session)
+            emetteur: "patient",
+            contenu: content
+        });
+
+        } catch (error) {
+        console.error("❌ Erreur lors de la communication avec l'API :", error.response?.data || error.message);
+        await sendReply(from, "Désolé, une erreur est survenue.");
+        }
+
     }
   }
 
