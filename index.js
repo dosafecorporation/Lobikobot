@@ -8,9 +8,15 @@ const usersState = {}; // état temporaire en RAM
 app.use(express.json());
 
 // ⚙️ Configuration Meta
-const VERIFY_TOKEN = "3f5G7h9JkLqR8tXzA1bC2vW4eY"; // Même que celui renseigné dans Meta
-const ACCESS_TOKEN = "EAFX0upka73gBPDUUddYBgqighFHTlrYdWB0sMoEeZCLp40vBcLSfXiczNhLnmLDVnuZCLNLBI8EqqswTOOTw4gCuKMc4GN8qnOq96jFqufVZBgiBcz2BZBDOxG3ANgLYhtXQHZBg0XyJUfdxEFhWZCOwE6KO45g2V07yHbp3UkbzkmqmWfGUlKiOBrCj04HOyHPgZDZD"; // Ton token WhatsApp Cloud API
-const PHONE_NUMBER_ID = "748948674961299"; // ID de ton numéro dans Meta
+const VERIFY_TOKEN = "3f5G7h9JkLqR8tXzA1bC2vW4eY";
+const ACCESS_TOKEN = "EAFX0upka73gBPDUUddYBgqighFHTlrYdWB0sMoEeZCLp40vBcLSfXiczNhLnmLDVnuZCLNLBI8EqqswTOOTw4gCuKMc4GN8qnOq96jFqufVZBgiBcz2BZBDOxG3ANgLYhtXQHZBg0XyJUfdxEFhWZCOwE6KO45g2V07yHbp3UkbzkmqmWfGUlKiOBrCj04HOyHPgZDZD";
+const PHONE_NUMBER_ID = "748948674961299";
+
+// Champs du patient à collecter
+const patientFields = [
+  "nom", "postnom", "prenom", "sexe", "date_naissance",
+  "etat_civil", "telephone", "adresse", "langue_preferee"
+];
 
 // ✅ Vérification Webhook (GET)
 app.get('/webhook', (req, res) => {
@@ -37,49 +43,50 @@ app.post('/webhook', async (req, res) => {
 
     if (message && from && content) {
       console.log(`📨 Message reçu de ${from} : "${content}"`);
-
       const now = Date.now();
-      const userState = usersState[from];
 
-      // 🔁 Si le compte est dans la mémoire et a expiré (4h = 4*60*60*1000)
-      if (userState && now - userState.lastUpdated > 4 * 60 * 60 * 1000) {
+      // Expiration de session
+      if (usersState[from] && now - usersState[from].lastUpdated > 4 * 60 * 60 * 1000) {
         delete usersState[from];
         await sendReply(from, "⏳ Votre session a expiré après 4h d'inactivité. Recommençons !");
       }
 
       try {
-        // Étape 1 : Vérifier si le compte WhatsApp est déjà inscrit
-        const compteRes = await axios.get(`https://lobiko.onrender.com/api/whatsapp-accounts/?whatsapp_id=${from}`);
-        const compteExiste = compteRes.data.length > 0;
-
-        if (compteExiste) {
-          const user = compteRes.data[0];
-          await sendReply(from, `👋 Bonjour ${user.nom_utilisateur}, ravi de vous revoir !`);
+        // Vérifie si ce WhatsApp ID correspond à un patient existant
+        const existing = await axios.get(`https://lobiko.onrender.com/api/patients/?telephone=${from}`);
+        if (existing.data.length > 0) {
+          const p = existing.data[0];
+          await sendReply(from, `👋 Bonjour ${p.prenom}, ravi de vous revoir !`);
           return res.sendStatus(200);
         }
 
-        // Si le user est en cours de création (en attente du nom)
-        if (usersState[from] && usersState[from].step === 'awaiting_name') {
-          const nom = content.trim();
+        // Nouvelle session ou suite de saisie
+        if (!usersState[from]) {
+          usersState[from] = {
+            step: 0,
+            tempData: { telephone: from },
+            lastUpdated: now
+          };
+          await sendReply(from, "👋 Bienvenue ! Quel est votre nom ?");
+          return res.sendStatus(200);
+        }
 
-          // Appel API pour créer le compte
-          await axios.post("https://lobiko.onrender.com/api/whatsapp-accounts/", {
-            whatsapp_id: from,
-            nom_utilisateur: nom
-          });
+        // Continuer la collecte de données
+        const state = usersState[from];
+        const field = patientFields[state.step];
+        state.tempData[field] = content.trim();
+        state.step++;
+        state.lastUpdated = now;
 
+        if (state.step < patientFields.length) {
+          const nextField = patientFields[state.step];
+          await sendReply(from, `Merci ! Veuillez entrer ${nextField.replace('_', ' ')} :`);
+        } else {
+          // Création du patient
+          await axios.post("https://lobiko.onrender.com/api/patients/", state.tempData);
           delete usersState[from];
-          await sendReply(from, `✅ Merci ${nom}, votre compte a été créé avec succès. Bienvenue sur Lobiko 👨‍⚕️ !`);
-          return res.sendStatus(200);
+          await sendReply(from, "✅ Votre compte a été créé avec succès. Bienvenue sur Lobiko 👨‍⚕️ !");
         }
-
-        // Démarrage de la création si pas encore dans l'état
-        usersState[from] = {
-          step: 'awaiting_name',
-          lastUpdated: now,
-          tempData: {}
-        };
-        await sendReply(from, "👋 Bienvenue ! Quel est votre nom complet ?");
         return res.sendStatus(200);
 
       } catch (err) {
