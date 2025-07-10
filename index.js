@@ -14,8 +14,8 @@ const PHONE_NUMBER_ID = "748948674961299";
 const usersState = {};
 
 // Valeurs autorisées pour certains champs
-const validSexes = ['homme', 'femme'];
-const validLangues = ['français', 'anglais', 'lingala', 'swahili', 'kikongo', 'tshiluba'];
+const validSexes = ['Homme', 'Femme'];
+const validLangues = ['Français', 'Anglais', 'Lingala', 'Swahili', 'Kikongo', 'Tshiluba'];
 
 function isValidDate(dateString) {
   // format YYYY-MM-DD simple
@@ -107,14 +107,15 @@ app.post('/webhook', async (req, res) => {
           break;
 
         case 'awaiting_sexe':
-          if (!validSexes.includes(text.toLowerCase())) {
-            await sendReply(from, `❌ Sexe invalide. Choisissez parmi : ${validSexes.join(', ')}`);
-            return res.sendStatus(200);
-          }
-          state.tempData.sexe = text.toLowerCase();
-          state.step = 'awaiting_date_naissance';
-          await sendReply(from, "Merci ! Veuillez entrer votre date de naissance (YYYY-MM-DD) :");
-          break;
+            const sexeFormatted = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+            if (!validSexes.includes(sexeFormatted)) {
+                await sendReply(from, `❌ Sexe invalide. Choisissez parmi : ${validSexes.join(', ')}`);
+                return res.sendStatus(200);
+            }
+            state.tempData.sexe = sexeFormatted;
+            state.step = 'awaiting_date_naissance';
+            await sendReply(from, "Merci ! Veuillez entrer votre date de naissance (YYYY-MM-DD) :");
+            break;
 
         case 'awaiting_date_naissance':
           if (!isValidDate(text)) {
@@ -139,24 +140,26 @@ app.post('/webhook', async (req, res) => {
           break;
 
         case 'awaiting_langue_preferee':
-          if (!validLangues.includes(text.toLowerCase())) {
-            await sendReply(from, `❌ Langue invalide. Choisissez parmi : ${validLangues.join(', ')}`);
-            return res.sendStatus(200);
-          }
-          state.tempData.langue_preferee = text.toLowerCase();
+            const langueFormatted = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+            if (!validLangues.includes(langueFormatted)) {
+                await sendReply(from, `❌ Langue invalide. Choisissez parmi : ${validLangues.join(', ')}`);
+                return res.sendStatus(200);
+            }
+            state.tempData.langue_preferee = langueFormatted;
 
           // Toutes les infos récupérées, création du patient
           try {
             await axios.post("https://lobiko.onrender.com/api/patients/", {
-              nom: state.tempData.nom,
-              postnom: state.tempData.postnom,
-              prenom: state.tempData.prenom,
-              sexe: state.tempData.sexe,
-              date_naissance: state.tempData.date_naissance,
-              etat_civil: state.tempData.etat_civil,
-              telephone: from, // pris automatiquement du numéro WhatsApp
-              adresse: state.tempData.adresse,
-              langue_preferee: state.tempData.langue_preferee
+                whatsapp_id: from,
+                nom: state.tempData.nom,
+                postnom: state.tempData.postnom,
+                prenom: state.tempData.prenom,
+                sexe: state.tempData.sexe.charAt(0).toUpperCase() + state.tempData.sexe.slice(1), // 'homme' => 'Homme'
+                date_naissance: state.tempData.date_naissance,
+                etat_civil: state.tempData.etat_civil,
+                telephone: from,
+                adresse: state.tempData.adresse,
+                langue_preferee: state.tempData.langue_preferee.charAt(0).toUpperCase() + state.tempData.langue_preferee.slice(1) // idem pour langue
             });
             await sendReply(from, `✅ Merci ${state.tempData.nom}, votre compte a été créé avec succès. Bienvenue sur Lobiko 👨‍⚕️ !`);
             delete usersState[from];
