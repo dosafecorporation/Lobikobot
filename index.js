@@ -17,9 +17,13 @@ const usersState = {};
 const validSexes = ['Homme', 'Femme'];
 const validLangues = ['Français', 'Anglais', 'Lingala', 'Swahili', 'Kikongo', 'Tshiluba'];
 
+// Fonction qui valide format + existence date
 function isValidDate(dateString) {
-  // format YYYY-MM-DD simple
-  return /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return false;
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return false;
+  // Re-vérifie que dateString correspond bien à la date parsée (évite 2023-02-30 invalides)
+  return d.toISOString().slice(0,10) === dateString;
 }
 
 // Webhook validation GET
@@ -57,7 +61,7 @@ app.post('/webhook', async (req, res) => {
         await sendReply(from, "⏳ Votre session a expiré après 4h d'inactivité. Recommençons !");
       }
 
-      // Si l’utilisateur est déjà inscrit (patient)
+      // Vérifier si patient existe déjà
       try {
         const resCompte = await axios.get(`https://lobiko.onrender.com/api/patients/?telephone=${from}`);
         if (resCompte.data.length > 0) {
@@ -71,9 +75,8 @@ app.post('/webhook', async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Gestion du flow inscription
+      // Démarrage flow inscription si pas en cours
       if (!usersState[from]) {
-        // Démarrage du flow inscription
         usersState[from] = {
           step: 'awaiting_nom',
           lastUpdated: now,
@@ -83,96 +86,99 @@ app.post('/webhook', async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Flow étape par étape
+      // Récupération état et mise à jour timestamp
       const state = usersState[from];
       state.lastUpdated = now;
 
-      switch(state.step) {
-        case 'awaiting_nom':
-          state.tempData.nom = text;
-          state.step = 'awaiting_postnom';
-          await sendReply(from, "Merci ! Veuillez entrer votre postnom :");
-          break;
+      try {
+        switch(state.step) {
+          case 'awaiting_nom':
+            state.tempData.nom = text;
+            state.step = 'awaiting_postnom';
+            await sendReply(from, "Merci ! Veuillez entrer votre postnom :");
+            break;
 
-        case 'awaiting_postnom':
-          state.tempData.postnom = text;
-          state.step = 'awaiting_prenom';
-          await sendReply(from, "Merci ! Veuillez entrer votre prénom :");
-          break;
+          case 'awaiting_postnom':
+            state.tempData.postnom = text;
+            state.step = 'awaiting_prenom';
+            await sendReply(from, "Merci ! Veuillez entrer votre prénom :");
+            break;
 
-        case 'awaiting_prenom':
-          state.tempData.prenom = text;
-          state.step = 'awaiting_sexe';
-          await sendReply(from, `Merci ! Veuillez entrer votre sexe (${validSexes.join(', ')}) :`);
-          break;
+          case 'awaiting_prenom':
+            state.tempData.prenom = text;
+            state.step = 'awaiting_sexe';
+            await sendReply(from, `Merci ! Veuillez entrer votre sexe (${validSexes.join(', ')}) :`);
+            break;
 
-        case 'awaiting_sexe':
+          case 'awaiting_sexe':
             const sexeFormatted = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
             if (!validSexes.includes(sexeFormatted)) {
-                await sendReply(from, `❌ Sexe invalide. Choisissez parmi : ${validSexes.join(', ')}`);
-                return res.sendStatus(200);
+              await sendReply(from, `❌ Sexe invalide. Choisissez parmi : ${validSexes.join(', ')}`);
+              return res.sendStatus(200);
             }
             state.tempData.sexe = sexeFormatted;
             state.step = 'awaiting_date_naissance';
             await sendReply(from, "Merci ! Veuillez entrer votre date de naissance (YYYY-MM-DD) :");
             break;
 
-        case 'awaiting_date_naissance':
-          if (!isValidDate(text)) {
-            await sendReply(from, "❌ Format date invalide. Utilisez le format YYYY-MM-DD, ex: 1995-08-22");
-            return res.sendStatus(200);
-          }
-          state.tempData.date_naissance = text;
-          state.step = 'awaiting_etat_civil';
-          await sendReply(from, "Merci ! Veuillez entrer votre état civil :");
-          break;
+          case 'awaiting_date_naissance':
+            if (!isValidDate(text)) {
+              await sendReply(from, "❌ Format ou date invalide. Utilisez le format YYYY-MM-DD, ex: 1995-08-22");
+              return res.sendStatus(200);
+            }
+            state.tempData.date_naissance = text;
+            state.step = 'awaiting_etat_civil';
+            await sendReply(from, "Merci ! Veuillez entrer votre état civil :");
+            break;
 
-        case 'awaiting_etat_civil':
-          state.tempData.etat_civil = text;
-          state.step = 'awaiting_adresse';
-          await sendReply(from, "Merci ! Veuillez entrer votre adresse :");
-          break;
+          case 'awaiting_etat_civil':
+            state.tempData.etat_civil = text;
+            state.step = 'awaiting_adresse';
+            await sendReply(from, "Merci ! Veuillez entrer votre adresse :");
+            break;
 
-        case 'awaiting_adresse':
-          state.tempData.adresse = text;
-          state.step = 'awaiting_langue_preferee';
-          await sendReply(from, `Merci ! Veuillez entrer votre langue préférée (${validLangues.join(', ')}) :`);
-          break;
+          case 'awaiting_adresse':
+            state.tempData.adresse = text;
+            state.step = 'awaiting_langue_preferee';
+            await sendReply(from, `Merci ! Veuillez entrer votre langue préférée (${validLangues.join(', ')}) :`);
+            break;
 
-        case 'awaiting_langue_preferee':
+          case 'awaiting_langue_preferee':
             const langueFormatted = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
             if (!validLangues.includes(langueFormatted)) {
-                await sendReply(from, `❌ Langue invalide. Choisissez parmi : ${validLangues.join(', ')}`);
-                return res.sendStatus(200);
+              await sendReply(from, `❌ Langue invalide. Choisissez parmi : ${validLangues.join(', ')}`);
+              return res.sendStatus(200);
             }
             state.tempData.langue_preferee = langueFormatted;
 
-          // Toutes les infos récupérées, création du patient
-          try {
+            // Toutes les infos sont prêtes, on tente la création en base
             await axios.post("https://lobiko.onrender.com/api/patients/", {
-                whatsapp_id: from,
-                nom: state.tempData.nom,
-                postnom: state.tempData.postnom,
-                prenom: state.tempData.prenom,
-                sexe: state.tempData.sexe.charAt(0).toUpperCase() + state.tempData.sexe.slice(1), // 'homme' => 'Homme'
-                date_naissance: state.tempData.date_naissance,
-                etat_civil: state.tempData.etat_civil,
-                telephone: from,
-                adresse: state.tempData.adresse,
-                langue_preferee: state.tempData.langue_preferee.charAt(0).toUpperCase() + state.tempData.langue_preferee.slice(1) // idem pour langue
+              whatsapp_id: from,
+              nom: state.tempData.nom,
+              postnom: state.tempData.postnom,
+              prenom: state.tempData.prenom,
+              sexe: state.tempData.sexe,
+              date_naissance: state.tempData.date_naissance,
+              etat_civil: state.tempData.etat_civil,
+              telephone: from,
+              adresse: state.tempData.adresse,
+              langue_preferee: state.tempData.langue_preferee
             });
             await sendReply(from, `✅ Merci ${state.tempData.nom}, votre compte a été créé avec succès. Bienvenue sur Lobiko 👨‍⚕️ !`);
-            delete usersState[from];
-          } catch (err) {
-            console.error("❌ Erreur création patient :", err.response?.data || err.message);
-            await sendReply(from, "Désolé, une erreur est survenue lors de la création du compte.");
-          }
-          break;
 
-        default:
-          await sendReply(from, "Désolé, une erreur est survenue dans la conversation. Recommençons.");
-          delete usersState[from];
-          break;
+            // Suppression de l'état car terminé
+            delete usersState[from];
+            break;
+
+          default:
+            await sendReply(from, "Désolé, une erreur est survenue dans la conversation. Recommençons.");
+            delete usersState[from];
+            break;
+        }
+      } catch (err) {
+        console.error("❌ Erreur création patient :", err.response?.data || err.message);
+        await sendReply(from, "Désolé, une erreur est survenue lors de la création du compte. Recommençons !");
+        delete usersState[from];
       }
     }
   }
