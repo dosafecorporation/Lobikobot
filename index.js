@@ -8,7 +8,7 @@ app.use(express.json());
 
 // ⚙️ Configuration Meta
 const VERIFY_TOKEN = "3f5G7h9JkLqR8tXzA1bC2vW4eY"; // Même que celui renseigné dans Meta
-const ACCESS_TOKEN = "EAFX0upka73gBPKZBCT8k4Vxg2r6BD8CkRHpZAZCfHVJKJ8Bu3BEKoius0LwSPCtv3SO89aVnPwYLWZAxhXPZBNLQNCysCEnLM87zEWMY9aZBqsnmIk6h4qH6eAgSJHkWYfBsCVnY4x9MR5kKnZAFXhFzxG0VCOpD1GjjRrxWyys30yV4DlmmQL3ciSahxViuzAqJdSPqwSORxt1F22cYTsnhVJJ1KLWQoxh6w5J1Yp55NBccIQZD"; // Ton token WhatsApp Cloud API
+const ACCESS_TOKEN = "EAFX0upka73gBPDUUddYBgqighFHTlrYdWB0sMoEeZCLp40vBcLSfXiczNhLnmLDVnuZCLNLBI8EqqswTOOTw4gCuKMc4GN8qnOq96jFqufVZBgiBcz2BZBDOxG3ANgLYhtXQHZBg0XyJUfdxEFhWZCOwE6KO45g2V07yHbp3UkbzkmqmWfGUlKiOBrCj04HOyHPgZDZD"; // Ton token WhatsApp Cloud API
 const PHONE_NUMBER_ID = "748948674961299"; // ID de ton numéro dans Meta
 
 // ✅ Vérification Webhook (GET)
