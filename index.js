@@ -21,9 +21,7 @@ const validLangues = ['Français', 'Anglais', 'Lingala', 'Swahili', 'Kikongo', '
 function isValidDate(dateString) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return false;
   const d = new Date(dateString);
-  if (Number.isNaN(d.getTime())) return false;
-  // Re-vérifie que dateString correspond bien à la date parsée (évite 2023-02-30 invalides)
-  return d.toISOString().slice(0,10) === dateString;
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === dateString;
 }
 
 // Webhook validation GET
@@ -55,18 +53,46 @@ app.post('/webhook', async (req, res) => {
 
       const now = Date.now();
 
-      // Expire la session si +4h d’inactivité
-      if (usersState[from] && (now - usersState[from].lastUpdated > 4 * 60 * 60 * 1000)) {
+      // Expire la session si +1h d’inactivité
+      if (usersState[from] && (now - usersState[from].lastUpdated > 1 * 60 * 60 * 1000)) {
         delete usersState[from];
-        await sendReply(from, "⏳ Votre session a expiré après 4h d'inactivité. Recommençons !");
+        await sendReply(from, "⏳ Votre session a expiré après 1h d'inactivité. Recommençons !");
+        return res.sendStatus(200);
       }
 
-      // Vérifier si patient existe déjà
+      // Si message = "annuler", stoppe la session
+      if (text.toLowerCase() === "annuler") {
+        delete usersState[from];
+        await sendReply(from, "🛑 Votre session a été annulée. Vous pouvez recommencer à tout moment.");
+        return res.sendStatus(200);
+      }
+
+      // Vérifier si patient déjà inscrit
       try {
         const resCompte = await axios.get(`https://lobiko.onrender.com/api/patients/?telephone=${from}`);
         if (resCompte.data.length > 0) {
           const patient = resCompte.data[0];
-          await sendReply(from, `👋 Bonjour ${patient.nom}, ravi de vous revoir !`);
+
+          if (usersState[from] && usersState[from].step === 'awaiting_medecin_confirmation') {
+            const reponse = text.toLowerCase();
+            if (reponse === 'oui') {
+              await sendReply(from, "✅ Parfait. Un médecin va bientôt vous répondre, merci de patienter.");
+              delete usersState[from];
+            } else if (reponse === 'non') {
+              await sendReply(from, "🛑 Pas de souci. N'hésitez pas à revenir quand vous le souhaitez.");
+              delete usersState[from];
+            } else {
+              await sendReply(from, "❓ Merci de répondre par 'oui' ou 'non'. Souhaitez-vous parler à un médecin maintenant ?");
+            }
+            return res.sendStatus(200);
+          }
+
+          // Première fois qu'on retrouve ce patient dans usersState
+          usersState[from] = {
+            step: 'awaiting_medecin_confirmation',
+            lastUpdated: now
+          };
+          await sendReply(from, `👋 Bonjour ${patient.nom}, ravi de vous revoir !\nSouhaitez-vous parler à un médecin maintenant ? (oui / non)`);
           return res.sendStatus(200);
         }
       } catch (err) {
@@ -75,7 +101,7 @@ app.post('/webhook', async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Démarrage flow inscription si pas en cours
+      // Début inscription
       if (!usersState[from]) {
         usersState[from] = {
           step: 'awaiting_nom',
@@ -86,12 +112,12 @@ app.post('/webhook', async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Récupération état et mise à jour timestamp
+      // Processus d’inscription pas à pas
       const state = usersState[from];
       state.lastUpdated = now;
 
       try {
-        switch(state.step) {
+        switch (state.step) {
           case 'awaiting_nom':
             state.tempData.nom = text;
             state.step = 'awaiting_postnom';
@@ -151,7 +177,7 @@ app.post('/webhook', async (req, res) => {
             }
             state.tempData.langue_preferee = langueFormatted;
 
-            // Toutes les infos sont prêtes, on tente la création en base
+            // Création dans la base
             await axios.post("https://lobiko.onrender.com/api/patients/", {
               whatsapp_id: from,
               nom: state.tempData.nom,
@@ -164,14 +190,13 @@ app.post('/webhook', async (req, res) => {
               adresse: state.tempData.adresse,
               langue_preferee: state.tempData.langue_preferee
             });
-            await sendReply(from, `✅ Merci ${state.tempData.nom}, votre compte a été créé avec succès. Bienvenue sur Lobiko 👨‍⚕️ !`);
 
-            // Suppression de l'état car terminé
+            await sendReply(from, `✅ Merci ${state.tempData.nom}, votre compte a été créé avec succès. Bienvenue sur Lobiko 👨‍⚕️ !`);
             delete usersState[from];
             break;
 
           default:
-            await sendReply(from, "Désolé, une erreur est survenue dans la conversation. Recommençons.");
+            await sendReply(from, "Désolé, une erreur est survenue. On recommence.");
             delete usersState[from];
             break;
         }
@@ -186,7 +211,7 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-// Fonction envoi message WhatsApp via Meta API
+// Fonction d'envoi de réponse WhatsApp
 async function sendReply(to, message) {
   try {
     await axios.post(
@@ -209,7 +234,7 @@ async function sendReply(to, message) {
   }
 }
 
-// Lancement serveur
+// Lancer serveur
 app.listen(port, () => {
   console.log(`🚀 Serveur bot WhatsApp en écoute sur le port ${port}`);
 });
